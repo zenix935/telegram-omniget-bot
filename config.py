@@ -14,23 +14,14 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # Telegram MTProto & Bot Configuration
-    # Obtain API_ID and API_HASH from https://my.telegram.org
-    API_ID: int = Field(
-        default=0,
-        description="Telegram API ID from https://my.telegram.org",
-    )
-    API_HASH: str = Field(
-        default="",
-        description="Telegram API HASH from https://my.telegram.org",
-    )
+    # Telegram Bot Configuration
     BOT_TOKEN: str = Field(
         default="",
         description="Telegram Bot API Token from @BotFather",
     )
-    SESSION_NAME: str = Field(
-        default="omniget_bot",
-        description="Pyrogram SQLite session filename / identifier",
+    BOT_API_SERVER: Optional[str] = Field(
+        default=None,
+        description="Custom/Local Telegram Bot API server URL (e.g. http://telegram-bot-api:8081). If None, uses official server.",
     )
 
     # Storage & Temporary Files
@@ -93,11 +84,10 @@ class Settings(BaseSettings):
         le=8,
         description="Maximum threads allocated to FFmpeg remuxing",
     )
-    # Native MTProto supports 2000 MB (2 GB) uploads natively without custom Bot API servers!
     MAX_FILE_SIZE_MB: int = Field(
-        default=2000,
+        default=50,
         ge=1,
-        description="Maximum upload file size in MB. MTProto natively supports up to 2000 MB (2GB).",
+        description="Maximum upload file size in MB for standard Bot API (50 MB) or local server (up to 2000 MB)",
     )
 
     # Binaries & CLI Paths
@@ -118,7 +108,7 @@ class Settings(BaseSettings):
     PROGRESS_UPDATE_INTERVAL_SECONDS: float = Field(
         default=4.0,
         ge=1.0,
-        description="Minimum interval in seconds between Telegram message edits for download/upload progress",
+        description="Minimum interval in seconds between Telegram message edits for download progress",
     )
     MAX_LINKS_PER_MESSAGE: int = Field(
         default=2,

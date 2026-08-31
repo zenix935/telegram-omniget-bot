@@ -1,7 +1,9 @@
-from bot.middlewares.rate_limit import check_rate_limit, is_group_filter, is_private_filter
+from bot.middlewares.chat_type import ChatContextMiddleware, IsGroupFilter, IsPrivateFilter
+from bot.middlewares.rate_limit import RateLimitMiddleware
 
 __all__ = [
-    "check_rate_limit",
-    "is_group_filter",
-    "is_private_filter",
+    "ChatContextMiddleware",
+    "IsGroupFilter",
+    "IsPrivateFilter",
+    "RateLimitMiddleware",
 ]

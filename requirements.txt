@@ -1,10 +1,8 @@
-pyrogram>=2.0.106
-tgcrypto>=1.2.5
+aiogram>=3.17.0
 pydantic-settings>=2.7.0
 yt-dlp>=2025.01.26
 redis>=5.2.1
 aiohttp>=3.11.0
-aiofiles>=24.1.0
 mutagen>=1.47.0
 pillow>=11.1.0
 pytest>=8.3.0

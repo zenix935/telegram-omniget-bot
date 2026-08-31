@@ -10,7 +10,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    g++ \
     libffi-dev \
     curl \
     ca-certificates \
@@ -45,8 +44,8 @@ COPY --from=builder /install /install
 RUN groupadd -g 10001 botuser && \
     useradd -u 10001 -g botuser -s /bin/bash -m botuser
 
-# Create downloads temporary storage and app directories with correct permissions
-RUN mkdir -p /tmp/downloads /app/sessions && \
+# Create downloads temporary storage with correct permissions
+RUN mkdir -p /tmp/downloads && \
     chown -R botuser:botuser /tmp/downloads /app
 
 # Copy application source code

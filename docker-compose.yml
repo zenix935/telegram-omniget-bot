@@ -12,7 +12,6 @@ services:
       - DOWNLOAD_DIR=/tmp/downloads
     volumes:
       - bot_temp_downloads:/tmp/downloads
-      - bot_sessions:/app/sessions
     deploy:
       resources:
         limits:
@@ -34,6 +33,4 @@ services:
 
 volumes:
   bot_temp_downloads:
-    driver: local
-  bot_sessions:
     driver: local

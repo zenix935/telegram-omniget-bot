@@ -1,6 +1,6 @@
 import pytest
-from pyrogram.enums import MessageEntityType
-from pyrogram.types import Message, MessageEntity, User, Chat
+from aiogram.enums import MessageEntityType
+from aiogram.types import Message, MessageEntity, User, Chat
 from bot.utils.helpers import extract_links_from_message, format_bytes, format_duration, format_progress_bar
 
 
@@ -13,8 +13,9 @@ def test_format_helpers():
 
 
 def test_extract_links_entities():
-    # Simulated Pyrogram message with URL entity
+    # Simulated message with URL entity
     text = "Check this cool video https://www.youtube.com/watch?v=abc and discuss!"
+    # offset of https... is 22, length is 39
     url_start = text.index("https://")
     url_str = "https://www.youtube.com/watch?v=abc"
     entity = MessageEntity(type=MessageEntityType.URL, offset=url_start, length=len(url_str))
@@ -22,8 +23,8 @@ def test_extract_links_entities():
     chat = Chat(id=123, type="group")
     user = User(id=456, is_bot=False, first_name="Test")
     msg = Message(
-        id=1,
-        date=None,
+        message_id=1,
+        date=123456789,
         chat=chat,
         from_user=user,
         text=text,
@@ -40,8 +41,8 @@ def test_extract_links_regex_fallback():
     chat = Chat(id=123, type="private")
     user = User(id=456, is_bot=False, first_name="Test")
     msg = Message(
-        id=1,
-        date=None,
+        message_id=1,
+        date=123456789,
         chat=chat,
         from_user=user,
         text=text,

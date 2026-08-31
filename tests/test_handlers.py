@@ -1,10 +1,12 @@
-from unittest.mock import AsyncMock, MagicMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from pyrogram.enums import ChatMemberStatus
-from pyrogram.types import ChatMember
+from aiogram.enums import ChatType
+from aiogram.types import Chat, Message, User
 
 from bot.handlers.group import get_group_config, is_user_group_admin
 from bot.handlers.private import PENDING_DOWNLOADS
+from config import settings
 from core.downloader import MediaInfo
 
 
@@ -17,17 +19,17 @@ async def test_group_config():
 
 @pytest.mark.asyncio
 async def test_is_user_group_admin():
-    client = AsyncMock()
-    member = MagicMock(spec=ChatMember)
-    member.status = ChatMemberStatus.ADMINISTRATOR
-    client.get_chat_member.return_value = member
+    bot = AsyncMock()
+    member = MagicMock()
+    member.status = "administrator"
+    bot.get_chat_member.return_value = member
 
-    is_admin = await is_user_group_admin(client, chat_id=-100123, user_id=456)
+    is_admin = await is_user_group_admin(bot, chat_id=-100123, user_id=456)
     assert is_admin is True
 
-    member.status = ChatMemberStatus.MEMBER
-    client.get_chat_member.return_value = member
-    is_admin_member = await is_user_group_admin(client, chat_id=-100123, user_id=789)
+    member.status = "member"
+    bot.get_chat_member.return_value = member
+    is_admin_member = await is_user_group_admin(bot, chat_id=-100123, user_id=789)
     assert is_admin_member is False
 
 
