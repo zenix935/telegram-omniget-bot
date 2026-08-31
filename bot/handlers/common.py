@@ -1,43 +1,31 @@
-"""Shared error handlers and common commands."""
+"""Shared commands and global error handlers for Pyrogram."""
 
 import logging
-from aiogram import Router, types
-from aiogram.filters import Command
-from aiogram.types import ErrorEvent
+from pyrogram import Client, filters
+from pyrogram.types import Message
 
 logger = logging.getLogger(__name__)
 
-router = Router(name="common_router")
 
+def register_common_handlers(app: Client):
+    """Register common commands like /help and /start redirection."""
 
-@router.message(Command("help"))
-async def handle_help_command(message: types.Message):
-    """Provide helpful instructions about bot capabilities and supported links."""
-    help_text = (
-        "🤖 **Telegram Media Downloader Bot**\n\n"
-        "Send me any supported media link to download and receive it directly here!\n\n"
-        "📌 **Supported Platforms:**\n"
-        "• YouTube, Shorts, Music\n"
-        "• TikTok, Instagram (Reels & Posts)\n"
-        "• Twitter / X, Reddit, Threads\n"
-        "• Udemy, Facebook, Vimeo, SoundCloud, Twitch Clips\n\n"
-        "⚡ **Features:**\n"
-        "• **Direct Messages:** Choose format (Best MP4, 720p, or MP3 Audio).\n"
-        "• **Groups & Topics:** Zero-clutter auto-mode that replies in the same topic and cleans status messages.\n"
-        "• **Resource Guardrails:** Hard timeouts, disk protection, and rate-limiting.\n\n"
-        "⚙️ **Group Admins:** Use `/settings` in your group to toggle auto-download or default quality."
-    )
-    await message.reply(help_text, parse_mode="Markdown")
-
-
-@router.error()
-async def error_handler(event: ErrorEvent):
-    """Global exception handler for unexpected router errors."""
-    logger.error("Unhandled exception caught by error handler: %s", event.exception, exc_info=True)
-    try:
-        if event.update.message:
-            await event.update.message.reply(
-                "❌ An unexpected error occurred while processing your request. Please try again later."
-            )
-    except Exception:
-        pass
+    @app.on_message(filters.command(["help"]))
+    async def handle_help_command(client: Client, message: Message):
+        """Provide instructions about bot capabilities and supported links."""
+        help_text = (
+            "🤖 **Telegram Media Downloader Bot (MTProto 2GB)**\n\n"
+            "Send me any supported media link to download and receive it directly here!\n\n"
+            "📌 **Supported Platforms:**\n"
+            "• YouTube, Shorts, Music\n"
+            "• TikTok, Instagram (Reels & Posts)\n"
+            "• Twitter / X, Reddit, Threads\n"
+            "• Udemy, Facebook, Vimeo, SoundCloud, Twitch Clips\n\n"
+            "⚡ **Features:**\n"
+            "• **MTProto 2GB Uploads:** Natively upload large files up to 2GB.\n"
+            "• **Direct Messages:** Interactive buttons (Best MP4, 720p, MP3 Audio).\n"
+            "• **Groups & Topics:** Zero-clutter auto-mode that replies in the same topic and cleans status messages.\n"
+            "• **Resource Guardrails:** Hard timeouts, disk protection, and rate-limiting.\n\n"
+            "⚙️ **Group Admins:** Use `/settings` in your group to toggle auto-download or default quality."
+        )
+        await message.reply_text(help_text)

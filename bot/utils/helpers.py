@@ -1,16 +1,17 @@
-"""Link extraction from Telegram messages, progress bar builders, and safe upload utilities."""
+"""Link extraction from Pyrogram messages, progress bar builders, and safe upload utilities."""
 
 import asyncio
 import logging
 import re
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, Coroutine, List, Optional, Tuple, Any
 
-from aiogram import Bot
-from aiogram.enums import MessageEntityType
-from aiogram.types import FSInputFile, Message
+from pyrogram import Client
+from pyrogram.enums import MessageEntityType
+from pyrogram.types import Message
 
+from config import settings
 from core.security import is_supported_media_domain, validate_url
 
 logger = logging.getLogger(__name__)
@@ -24,19 +25,18 @@ RAW_URL_REGEX = re.compile(
 
 def extract_links_from_message(message: Message, max_links: int = 2) -> List[str]:
     """
-    Extract supported URLs from Telegram Message entities (URL or TEXT_LINK)
+    Extract supported URLs from Pyrogram Message entities (URL or TEXT_LINK)
     or fallback to regex extraction across message text/caption.
     """
     found_urls: List[str] = []
     text = message.text or message.caption or ""
     entities = message.entities or message.caption_entities or []
 
-    # 1. Process Telegram entities first (most reliable)
+    # 1. Process Message entities first (most reliable)
     for entity in entities:
         if entity.type == MessageEntityType.URL:
-            # Extract slice using UTF-16 code units (safe offset for emojis & multi-byte chars)
+            # Slicing using UTF-16 code units (safe offset for emojis & multi-byte chars)
             try:
-                # In Python string slicing vs UTF-16 code units:
                 encoded = text.encode("utf-16-le")
                 url_str = encoded[entity.offset * 2 : (entity.offset + entity.length) * 2].decode("utf-16-le")
             except Exception:
@@ -47,7 +47,7 @@ def extract_links_from_message(message: Message, max_links: int = 2) -> List[str
             if entity.url not in found_urls:
                 found_urls.append(entity.url.strip())
 
-    # 2. Fallback or augment with regex if no entities found or entities were raw
+    # 2. Fallback or augment with regex if no entities found or raw link
     if not found_urls and text:
         matches = RAW_URL_REGEX.findall(text)
         for m in matches:
@@ -98,16 +98,16 @@ def format_duration(seconds: Optional[int]) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-async def safe_delete_message(bot: Bot, chat_id: int, message_id: int) -> None:
-    """Safely delete a message without raising exceptions if already deleted or permissions missing."""
+async def safe_delete_message(client: Client, chat_id: int, message_id: int) -> None:
+    """Safely delete a message without raising exceptions."""
     try:
-        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+        await client.delete_messages(chat_id=chat_id, message_ids=message_id)
     except Exception as e:
         logger.debug("Could not delete message %d in chat %d: %s", message_id, chat_id, e)
 
 
 async def safe_edit_message_text(
-    bot: Bot,
+    client: Client,
     chat_id: int,
     message_id: int,
     text: str,
@@ -115,7 +115,7 @@ async def safe_edit_message_text(
 ) -> bool:
     """Safely edit a message text while ignoring unchanged content or deleted message errors."""
     try:
-        await bot.edit_message_text(
+        await client.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
@@ -124,10 +124,45 @@ async def safe_edit_message_text(
         return True
     except Exception as e:
         err_msg = str(e).lower()
-        if "message is not modified" in err_msg:
+        if "message_not_modified" in err_msg or "message is not modified" in err_msg:
             return True
         if "flood" in err_msg:
             logger.warning("Flood limit hit while editing message: %s", e)
         else:
             logger.debug("Edit message failed (%d in %d): %s", message_id, chat_id, e)
         return False
+
+
+def create_pyrogram_upload_progress(
+    client: Client,
+    chat_id: int,
+    status_message_id: int,
+    title: str,
+    interval_seconds: float = 4.0,
+):
+    """
+    Creates a throttled MTProto upload progress callback compatible with Pyrogram's
+    send_video / send_audio progress=(func, *args) signature.
+    """
+    last_update_time = 0.0
+
+    async def progress_callback(current: int, total: int):
+        nonlocal last_update_time
+        now = time.time()
+        if total > 0 and (now - last_update_time >= interval_seconds or current == total):
+            last_update_time = now
+            pct = (current / total) * 100.0
+            bar = format_progress_bar(pct)
+            text = (
+                f"📤 **Uploading to Telegram (MTProto 2GB):** {bar}\n"
+                f"`{format_bytes(current)} / {format_bytes(total)}`\n"
+                f"`{title[:60]}`"
+            )
+            await safe_edit_message_text(
+                client=client,
+                chat_id=chat_id,
+                message_id=status_message_id,
+                text=text,
+            )
+
+    return progress_callback

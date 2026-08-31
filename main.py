@@ -1,18 +1,18 @@
-"""Main application entrypoint, startup/shutdown lifecycles, and polling manager."""
+"""Main application entrypoint, startup/shutdown lifecycles, and Pyrogram MTProto runner."""
 
 import asyncio
 import logging
 import sys
 from pathlib import Path
 
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.enums import ParseMode
+from pyrogram import Client
+from pyrogram.enums import ParseMode
 
-from bot.handlers import common_router, group_router, private_router
-from bot.middlewares import ChatContextMiddleware, RateLimitMiddleware
+from bot.handlers import (
+    register_common_handlers,
+    register_group_handlers,
+    register_private_handlers,
+)
 from config import settings
 from core.cleaner import purge_old_directories, run_janitor_loop
 from core.downloader import DownloaderEngine
@@ -28,11 +28,18 @@ logger = logging.getLogger("omniget_bot")
 
 
 async def main():
-    """Initialize bot runtime, core engines, background janitor, and polling loops."""
-    logger.info("Initializing Telegram Media Downloader Bot...")
+    """Initialize bot runtime, MTProto Pyrogram client, background janitor, and long-polling."""
+    logger.info("Initializing Telegram Media Downloader Bot with Pyrogram MTProto (2GB limit)...")
 
     if not settings.BOT_TOKEN:
         logger.critical("BOT_TOKEN is missing! Please configure BOT_TOKEN in .env or environment.")
+        sys.exit(1)
+
+    if not settings.API_ID or not settings.API_HASH:
+        logger.critical(
+            "API_ID and API_HASH are required for MTProto Pyrogram connection. "
+            "Please get them from https://my.telegram.org and configure in .env"
+        )
         sys.exit(1)
 
     # Ensure download base folder exists and clean any legacy artifacts on startup
@@ -56,34 +63,33 @@ async def main():
         window_seconds=60.0,
     )
 
-    # Initialize Bot Session (support local Bot API server if configured)
-    session = None
-    if settings.BOT_API_SERVER:
-        logger.info("Using custom Telegram Bot API server: %s", settings.BOT_API_SERVER)
-        api_server = TelegramAPIServer.from_base(settings.BOT_API_SERVER, is_local=True)
-        session = AiohttpSession(api=api_server)
-
-    bot = Bot(
-        token=settings.BOT_TOKEN,
-        session=session,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    # Initialize Pyrogram MTProto Client
+    app = Client(
+        name=settings.SESSION_NAME,
+        api_id=settings.API_ID,
+        api_hash=settings.API_HASH,
+        bot_token=settings.BOT_TOKEN,
+        parse_mode=ParseMode.MARKDOWN,
+        workdir=str(Path.cwd()),
+        max_concurrent_transmissions=4,
     )
 
-    # Initialize Dispatcher
-    dp = Dispatcher()
-
-    # Register Middlewares
-    dp.message.middleware(ChatContextMiddleware())
-    dp.message.middleware(RateLimitMiddleware(user_limiter=user_limiter, group_limiter=group_limiter))
-
-    # Register Routers (order matters: common commands -> group / private)
-    dp.include_router(common_router)
-    dp.include_router(private_router)
-    dp.include_router(group_router)
-
-    # Dependency Injection into handlers
-    dp["downloader"] = downloader
-    dp["concurrency"] = concurrency
+    # Register Handlers
+    register_common_handlers(app)
+    register_private_handlers(
+        app=app,
+        downloader=downloader,
+        concurrency=concurrency,
+        user_limiter=user_limiter,
+        group_limiter=group_limiter,
+    )
+    register_group_handlers(
+        app=app,
+        downloader=downloader,
+        concurrency=concurrency,
+        user_limiter=user_limiter,
+        group_limiter=group_limiter,
+    )
 
     # Start Background Janitor Task
     janitor_task = asyncio.create_task(
@@ -94,17 +100,22 @@ async def main():
         )
     )
 
-    # Start Polling with clean shutdown lifecycle
     try:
-        me = await bot.get_me()
-        logger.info("Bot successfully authenticated as @%s (ID: %d)", me.username, me.id)
-        logger.info("Starting update polling loop...")
-        
-        # Drop pending updates on startup to prevent flooding from historical group messages
-        await bot.delete_webhook(drop_pending_updates=True)
-        await dp.start_polling(bot)
+        await app.start()
+        me = await app.get_me()
+        logger.info(
+            "Bot successfully authenticated via MTProto as @%s (ID: %d)",
+            me.username,
+            me.id,
+        )
+        logger.info("Bot is running and ready to handle 2GB media uploads!")
+
+        # Keep client running until interrupted
+        await asyncio.Event().wait()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutdown signal received.")
     except Exception as e:
-        logger.critical("Fatal runtime error in bot polling: %s", e, exc_info=True)
+        logger.critical("Fatal runtime error in Pyrogram client: %s", e, exc_info=True)
     finally:
         logger.info("Initiating graceful shutdown...")
         janitor_task.cancel()
@@ -112,7 +123,8 @@ async def main():
             await janitor_task
         except asyncio.CancelledError:
             pass
-        await bot.session.close()
+        if app.is_connected:
+            await app.stop()
         logger.info("Bot shutdown complete.")
 
 
