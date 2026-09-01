@@ -11,6 +11,7 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 from bot.keyboards.inline import make_group_settings_keyboard
 from bot.middlewares.chat_type import IsGroupFilter
 from bot.utils.helpers import (
+    escape_html,
     extract_links_from_message,
     format_bytes,
     safe_delete_message,
@@ -215,7 +216,9 @@ async def handle_group_links(
                 return
 
             # Step 3: Send downloaded media directly replying to original user message
-            caption = f"🎬 **{result.title}**\n💾 `{format_bytes(result.file_size_bytes)}`"
+            title_escaped = escape_html(result.title)
+            size_escaped = escape_html(format_bytes(result.file_size_bytes))
+            caption = f"🎬 <b>{title_escaped}</b>\n💾 <code>{size_escaped}</code>"
             input_file = FSInputFile(result.file_path, filename=result.filename)
             thumb_input = FSInputFile(result.thumbnail_path) if result.thumbnail_path and result.thumbnail_path.exists() else None
 
@@ -228,7 +231,7 @@ async def handle_group_links(
                     height=result.height,
                     thumbnail=thumb_input,
                     supports_streaming=True,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                 )
             elif result.media_type == "audio":
                 await message.reply_audio(
@@ -237,13 +240,13 @@ async def handle_group_links(
                     title=result.title,
                     duration=result.duration,
                     thumbnail=thumb_input,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                 )
             else:
                 await message.reply_document(
                     document=input_file,
                     caption=caption,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                 )
 
             # Step 4: Zero-clutter auto-cleanup of temporary status message

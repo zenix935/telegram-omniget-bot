@@ -1,4 +1,5 @@
 from bot.utils.helpers import (
+    escape_html,
     extract_links_from_message,
     format_bytes,
     format_duration,

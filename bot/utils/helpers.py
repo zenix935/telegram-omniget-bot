@@ -1,6 +1,7 @@
 """Link extraction from Telegram messages, progress bar builders, and safe upload utilities."""
 
 import asyncio
+import html
 import logging
 import re
 import time
@@ -20,6 +21,11 @@ RAW_URL_REGEX = re.compile(
     r"https?://(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&//=]*)",
     re.IGNORECASE,
 )
+
+
+def escape_html(text: str) -> str:
+    """Safely escape HTML characters for Telegram HTML parse mode."""
+    return html.escape(str(text or ""), quote=True)
 
 
 def extract_links_from_message(message: Message, max_links: int = 2) -> List[str]:
