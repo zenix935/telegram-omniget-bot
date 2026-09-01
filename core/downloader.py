@@ -108,13 +108,21 @@ class DownloaderEngine:
 
                     info_dict = await asyncio.to_thread(_extract_ig)
                     if info_dict:
-                        title = info_dict.get("title") or info_dict.get("description") or "Instagram Post"
+                        raw_title = info_dict.get("title") or info_dict.get("description") or "Instagram Post"
+                        formats = info_dict.get("formats") or []
+                        is_video = any(f.get("vcodec") != "none" for f in formats) or info_dict.get("ext") in ("mp4", "webm")
+                        
+                        # Clean up title if yt-dlp defaulted to "Video by <user>" for a photo post
+                        title = raw_title
+                        if not is_video and title.startswith("Video by "):
+                            title = "Post by " + title[9:]
+                        elif not is_video and title == "Video":
+                            title = "Photo"
+
                         if len(title) > 80:
                             title = title[:80] + "..."
                         duration = info_dict.get("duration")
                         extractor = "Instagram"
-                        formats = info_dict.get("formats") or []
-                        is_video = any(f.get("vcodec") != "none" for f in formats) or info_dict.get("ext") in ("mp4", "webm")
                         thumbs = info_dict.get("thumbnails") or []
                         thumb = thumbs[-1]["url"] if thumbs else None
                         
@@ -384,7 +392,12 @@ class DownloaderEngine:
                         if not is_video:
                             # Download photo(s)
                             entries = ig_info.get("entries", [])
-                            title = ig_info.get("title") or "Instagram Photo"
+                            raw_title = ig_info.get("title") or "Instagram Post"
+                            title = raw_title
+                            if title.startswith("Video by "):
+                                title = "Post by " + title[9:]
+                            elif title == "Video":
+                                title = "Photo"
                             img_files = []
                             async with aiohttp.ClientSession() as session:
                                 if entries:

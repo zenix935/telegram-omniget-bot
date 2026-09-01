@@ -187,11 +187,12 @@ async def handle_download_callback(
             )
 
     if call.message:
+        init_type = "image" if media_info.is_photo else "media"
         await safe_edit_message_text(
             bot=call.bot,
             chat_id=status_chat_id,
             message_id=status_msg_id,
-            text=f"⏳ *Initializing download queue for:* `{media_info.title[:60]}`...",
+            text=f"⏳ *Initializing {init_type} download for:* `{media_info.title[:60]}`...",
         )
 
     # Acquire concurrency slot and download
@@ -199,11 +200,12 @@ async def handle_download_callback(
     try:
         async with concurrency.acquire(user_id=call.from_user.id, is_group=False):
             if call.message:
+                dl_label = "Image" if media_info.is_photo else f"Media ({quality})"
                 await safe_edit_message_text(
                     bot=call.bot,
                     chat_id=status_chat_id,
                     message_id=status_msg_id,
-                    text=f"⬇️ *Downloading ({quality}):* `{media_info.title[:60]}`...",
+                    text=f"⬇️ *Downloading {dl_label}:* `{media_info.title[:60]}`...",
                 )
 
             success, result, err, temp_dir = await downloader.download(
