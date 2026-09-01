@@ -4,27 +4,37 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
-def make_format_selector_keyboard(download_key: str) -> InlineKeyboardMarkup:
+def make_format_selector_keyboard(download_key: str, is_photo: bool = False) -> InlineKeyboardMarkup:
     """
     Build interactive inline buttons for private chat media selection.
     download_key is an identifier to look up queued download info in state/cache.
     """
     builder = InlineKeyboardBuilder()
+    if is_photo:
+        builder.row(
+            InlineKeyboardButton(
+                text="🖼 Download Image / Post",
+                callback_data=f"dl:best:{download_key}",
+            )
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text="📹 Best Quality",
+                callback_data=f"dl:best:{download_key}",
+            ),
+            InlineKeyboardButton(
+                text="📹 720p MP4",
+                callback_data=f"dl:720p:{download_key}",
+            ),
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="🎵 MP3 Audio",
+                callback_data=f"dl:audio:{download_key}",
+            )
+        )
     builder.row(
-        InlineKeyboardButton(
-            text="📹 Best Quality",
-            callback_data=f"dl:best:{download_key}",
-        ),
-        InlineKeyboardButton(
-            text="📹 720p MP4",
-            callback_data=f"dl:720p:{download_key}",
-        ),
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text="🎵 MP3 Audio",
-            callback_data=f"dl:audio:{download_key}",
-        ),
         InlineKeyboardButton(
             text="❌ Cancel",
             callback_data=f"dl:cancel:{download_key}",

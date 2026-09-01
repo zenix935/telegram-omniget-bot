@@ -1,6 +1,7 @@
 aiogram>=3.17.0
 pydantic-settings>=2.7.0
 yt-dlp>=2025.01.26
+gallery-dl>=1.28.0
 redis>=5.2.1
 aiohttp>=3.11.0
 mutagen>=1.47.0

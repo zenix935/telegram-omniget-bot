@@ -8,7 +8,7 @@ from typing import Dict, Optional
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, FSInputFile, InputMediaPhoto, Message
 
 from bot.keyboards.inline import make_format_selector_keyboard
 from bot.middlewares.chat_type import IsPrivateFilter
@@ -96,18 +96,20 @@ async def handle_private_links(
     }
 
     # Format info box
+    is_photo_post = media_info.ext in ("jpg", "jpeg", "png", "webp") or not media_info.duration
+    icon = "🖼" if is_photo_post else "🎬"
     duration_str = format_duration(media_info.duration)
     size_str = format_bytes(media_info.filesize_approx) if media_info.filesize_approx else "Dynamic"
     
     text = (
-        f"🎬 **{media_info.title}**\n\n"
+        f"{icon} **{media_info.title}**\n\n"
         f"⏱ **Duration:** `{duration_str}`\n"
         f"📦 **Est. Size:** `{size_str}`\n"
         f"🌐 **Source:** `{media_info.extractor}`\n\n"
         f"Select preferred format to start download:"
     )
 
-    keyboard = make_format_selector_keyboard(download_key)
+    keyboard = make_format_selector_keyboard(download_key, is_photo=is_photo_post)
     await safe_edit_message_text(
         bot=message.bot,
         chat_id=message.chat.id,
@@ -259,6 +261,28 @@ async def handle_download_callback(
                     thumbnail=thumb_input,
                     parse_mode="HTML",
                 )
+            elif result.media_type == "photo":
+                photo_caption = f"🖼 <b>{title_escaped}</b>\n💾 <code>{size_escaped}</code>"
+                await call.bot.send_photo(
+                    chat_id=status_chat_id,
+                    photo=input_file,
+                    caption=photo_caption,
+                    parse_mode="HTML",
+                )
+            elif result.media_type == "gallery":
+                all_images = [result.file_path] + (result.extra_files or [])
+                media_group = []
+                for idx, img_p in enumerate(all_images[:10]):
+                    group_caption = f"🖼 <b>{title_escaped}</b> ({len(all_images)} photos)\n💾 <code>{size_escaped}</code>" if idx == 0 else ""
+                    media_group.append(
+                        InputMediaPhoto(
+                            media=FSInputFile(img_p),
+                            caption=group_caption if group_caption else None,
+                            parse_mode="HTML" if group_caption else None,
+                        )
+                    )
+                if media_group:
+                    await call.bot.send_media_group(chat_id=status_chat_id, media=media_group)
             else:
                 await call.bot.send_document(
                     chat_id=status_chat_id,

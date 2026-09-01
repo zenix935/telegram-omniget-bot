@@ -43,9 +43,10 @@ class DownloadResult:
     title: str
     duration: Optional[int] = None
     thumbnail_path: Optional[Path] = None
-    media_type: str = "video"  # "video", "audio", "document"
+    media_type: str = "video"  # "video", "audio", "photo", "gallery", "document"
     width: Optional[int] = None
     height: Optional[int] = None
+    extra_files: Optional[List[Path]] = None
 
 
 class DownloaderEngine:
@@ -60,7 +61,7 @@ class DownloaderEngine:
 
     async def probe_metadata(self, url: str) -> Tuple[bool, Optional[MediaInfo], Optional[str]]:
         """
-        Probe URL metadata safely using yt-dlp in JSON mode without downloading the media.
+        Probe URL metadata safely using yt-dlp/gallery-dl in JSON mode without downloading the media.
         """
         # SSRF & syntax check
         valid, reason = validate_url(url)
@@ -91,36 +92,71 @@ class DownloaderEngine:
                 timeout=30.0,
             )
 
-            if process.returncode != 0:
-                err_msg = stderr.decode("utf-8", errors="replace").strip()
-                logger.warning("Metadata probe failed for %s: %s", url, err_msg)
-                # Shorten error message for user
-                user_err = err_msg.splitlines()[-1] if err_msg else "Could not extract metadata"
-                return False, None, user_err
+            if process.returncode == 0:
+                info_dict = json.loads(stdout.decode("utf-8", errors="replace"))
 
-            info_dict = json.loads(stdout.decode("utf-8", errors="replace"))
+                title = info_dict.get("title") or "Unknown Title"
+                duration = info_dict.get("duration")
+                extractor = info_dict.get("extractor_key") or info_dict.get("extractor") or "generic"
+                filesize = info_dict.get("filesize") or info_dict.get("filesize_approx")
+                thumbnail = info_dict.get("thumbnail")
+                is_live = bool(info_dict.get("is_live", False))
+                ext = info_dict.get("ext") or "mp4"
 
-            title = info_dict.get("title") or "Unknown Title"
-            duration = info_dict.get("duration")
-            extractor = info_dict.get("extractor_key") or info_dict.get("extractor") or "generic"
-            filesize = info_dict.get("filesize") or info_dict.get("filesize_approx")
-            thumbnail = info_dict.get("thumbnail")
-            is_live = bool(info_dict.get("is_live", False))
-            ext = info_dict.get("ext") or "mp4"
+                media_info = MediaInfo(
+                    url=url,
+                    title=title,
+                    extractor=extractor,
+                    duration=duration,
+                    filesize_approx=filesize,
+                    thumbnail_url=thumbnail,
+                    is_live=is_live,
+                    formats_available=info_dict.get("formats"),
+                    description=info_dict.get("description"),
+                    ext=ext,
+                )
+                return True, media_info, None
 
-            media_info = MediaInfo(
-                url=url,
-                title=title,
-                extractor=extractor,
-                duration=duration,
-                filesize_approx=filesize,
-                thumbnail_url=thumbnail,
-                is_live=is_live,
-                formats_available=info_dict.get("formats"),
-                description=info_dict.get("description"),
-                ext=ext,
-            )
-            return True, media_info, None
+            # If yt-dlp metadata probe fails, attempt probe via gallery-dl for image/photo sites
+            if shutil.which(settings.GALLERYDL_BIN):
+                gdl_cmd = [settings.GALLERYDL_BIN, "-j", url]
+                try:
+                    gdl_proc = await asyncio.create_subprocess_exec(
+                        *gdl_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    gdl_out, gdl_err = await asyncio.wait_for(gdl_proc.communicate(), timeout=15.0)
+                    if gdl_proc.returncode == 0 and gdl_out:
+                        data = json.loads(gdl_out.decode("utf-8", errors="replace"))
+                        if isinstance(data, list) and data:
+                            entry = data[0]
+                            # gallery-dl JSON format is list of [[type_code, dict]] or [dict]
+                            item_dict = entry[1] if isinstance(entry, list) and len(entry) > 1 and isinstance(entry[1], dict) else (entry if isinstance(entry, dict) else {})
+                            title = item_dict.get("title") or item_dict.get("description") or "Image / Photo Post"
+                            if len(title) > 80:
+                                title = title[:80] + "..."
+                            extractor = item_dict.get("category") or "gallery"
+                            media_info = MediaInfo(
+                                url=url,
+                                title=title,
+                                extractor=extractor,
+                                duration=None,
+                                filesize_approx=None,
+                                thumbnail_url=None,
+                                is_live=False,
+                                formats_available=None,
+                                description=None,
+                                ext="jpg",
+                            )
+                            return True, media_info, None
+                except Exception as ge:
+                    logger.debug("gallery-dl probe error: %s", ge)
+
+            err_msg = stderr.decode("utf-8", errors="replace").strip()
+            logger.warning("Metadata probe failed for %s: %s", url, err_msg)
+            user_err = err_msg.splitlines()[-1] if err_msg else "Could not extract metadata"
+            return False, None, user_err
 
         except asyncio.TimeoutError:
             return False, None, "Timeout while probing URL metadata (site did not respond in time)."
@@ -280,20 +316,69 @@ class DownloaderEngine:
 
             # 6. Locate downloaded output file in temp_dir
             downloaded_files = [
-                f for f in temp_dir.iterdir()
+                f for f in temp_dir.rglob("*")
                 if f.is_file() and not f.name.endswith((".temp", ".part", ".ytdl", ".aria2"))
             ]
+
+            # If yt-dlp produced no files (e.g. image-only / photo post) and gallery-dl is available, try gallery-dl fallback
+            if not downloaded_files and shutil.which(settings.GALLERYDL_BIN):
+                logger.info("yt-dlp returned no media file, trying gallery-dl fallback for %s", url)
+                gdl_cmd = [
+                    settings.GALLERYDL_BIN,
+                    "--dest", str(temp_dir),
+                    "--filename", "{category}_{id}_{num}.{extension}",
+                    url,
+                ]
+                try:
+                    gdl_proc = await asyncio.create_subprocess_exec(
+                        *gdl_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await asyncio.wait_for(gdl_proc.wait(), timeout=60.0)
+                    downloaded_files = [
+                        f for f in temp_dir.rglob("*")
+                        if f.is_file() and not f.name.endswith((".temp", ".part", ".ytdl", ".aria2"))
+                    ]
+                except Exception as ge:
+                    logger.warning("gallery-dl fallback execution failed: %s", ge)
 
             if not downloaded_files:
                 return False, None, "No output file found after download completed.", temp_dir
 
-            # Find media file vs thumbnail
-            media_files = [f for f in downloaded_files if not f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")]
-            thumbnails = [f for f in downloaded_files if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")]
+            # Sort files
+            image_extensions = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
+            audio_extensions = (".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav")
+            video_extensions = (".mp4", ".mkv", ".webm", ".mov", ".avi")
 
-            target_file = media_files[0] if media_files else downloaded_files[0]
-            thumb_path = thumbnails[0] if thumbnails else None
+            video_files = [f for f in downloaded_files if f.suffix.lower() in video_extensions]
+            audio_files = [f for f in downloaded_files if f.suffix.lower() in audio_extensions]
+            image_files = [f for f in downloaded_files if f.suffix.lower() in image_extensions]
+            other_files = [f for f in downloaded_files if f not in video_files and f not in audio_files and f not in image_files]
+
+            if video_files:
+                target_file = video_files[0]
+                media_type = "video"
+                thumb_path = image_files[0] if image_files else None
+                extra_files = video_files[1:]
+            elif audio_files:
+                target_file = audio_files[0]
+                media_type = "audio"
+                thumb_path = image_files[0] if image_files else None
+                extra_files = audio_files[1:]
+            elif image_files:
+                target_file = image_files[0]
+                media_type = "photo" if len(image_files) == 1 else "gallery"
+                thumb_path = None
+                extra_files = image_files[1:]
+            else:
+                target_file = other_files[0] if other_files else downloaded_files[0]
+                media_type = "document"
+                thumb_path = None
+                extra_files = other_files[1:]
+
             file_size = target_file.stat().st_size
+            total_size = sum(f.stat().st_size for f in downloaded_files)
 
             # Check max file size against Bot API limits
             max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
@@ -306,36 +391,29 @@ class DownloaderEngine:
                     temp_dir,
                 )
 
-            # Determine media type
-            ext = target_file.suffix.lower()
-            if ext in (".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav"):
-                media_type = "audio"
-            elif ext in (".mp4", ".mkv", ".webm", ".mov", ".avi"):
-                media_type = "video"
-            else:
-                media_type = "document"
-
             # Probe video metadata using ffprobe if available
             duration = None
             width = None
             height = None
-            video_meta = await self._probe_file_streams(target_file)
-            if video_meta:
-                duration = video_meta.get("duration")
-                width = video_meta.get("width")
-                height = video_meta.get("height")
+            if media_type == "video":
+                video_meta = await self._probe_file_streams(target_file)
+                if video_meta:
+                    duration = video_meta.get("duration")
+                    width = video_meta.get("width")
+                    height = video_meta.get("height")
 
             result = DownloadResult(
                 temp_dir=temp_dir,
                 file_path=target_file,
                 filename=target_file.name,
-                file_size_bytes=file_size,
+                file_size_bytes=total_size,
                 title=target_file.stem,
                 duration=duration,
                 thumbnail_path=thumb_path,
                 media_type=media_type,
                 width=width,
                 height=height,
+                extra_files=extra_files,
             )
 
             return True, result, None, temp_dir

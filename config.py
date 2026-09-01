@@ -103,6 +103,10 @@ class Settings(BaseSettings):
         default="yt-dlp",
         description="yt-dlp executable name or path",
     )
+    GALLERYDL_BIN: str = Field(
+        default="gallery-dl",
+        description="gallery-dl executable name or path for non-video/photo posts",
+    )
     FFMPEG_BIN: str = Field(
         default="ffmpeg",
         description="ffmpeg executable name or path",
