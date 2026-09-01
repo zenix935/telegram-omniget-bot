@@ -96,7 +96,7 @@ async def handle_private_links(
     }
 
     # Format info box
-    is_photo_post = media_info.ext in ("jpg", "jpeg", "png", "webp") or not media_info.duration
+    is_photo_post = media_info.is_photo
     icon = "🖼" if is_photo_post else "🎬"
     duration_str = format_duration(media_info.duration)
     size_str = format_bytes(media_info.filesize_approx) if media_info.filesize_approx else "Dynamic"

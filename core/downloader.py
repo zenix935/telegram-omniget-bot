@@ -7,15 +7,25 @@ import os
 import re
 import shutil
 import uuid
+import aiohttp
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Coroutine, Dict, List, Optional, Tuple, Any
+
+import yt_dlp
+from yt_dlp.extractor.instagram import InstagramIE
 
 from config import settings
 from core.cleaner import check_disk_space, cleanup_directory
 from core.security import validate_url
 
 logger = logging.getLogger(__name__)
+
+
+class PhotoFriendlyInstagramIE(InstagramIE):
+    """Instagram Extractor that doesn't raise error on photo-only posts."""
+    def raise_no_formats(self, msg="No video formats found!", expected=False, video_id=None):
+        return
 
 
 @dataclass
@@ -31,6 +41,7 @@ class MediaInfo:
     formats_available: Optional[List[Dict[str, Any]]] = None
     description: Optional[str] = None
     ext: str = "mp4"
+    is_photo: bool = False
 
 
 @dataclass
@@ -82,6 +93,48 @@ class DownloaderEngine:
 
         logger.debug("Probing metadata with cmd: %s", cmd)
         try:
+            # First check if it's an Instagram URL
+            if "instagram.com" in url:
+                try:
+                    def _extract_ig():
+                        ydl = yt_dlp.YoutubeDL({
+                            "skip_download": True,
+                            "ignoreerrors": True,
+                            "no_warnings": True,
+                            "quiet": True,
+                        })
+                        ie = PhotoFriendlyInstagramIE(ydl)
+                        return ie._real_extract(url)
+
+                    info_dict = await asyncio.to_thread(_extract_ig)
+                    if info_dict:
+                        title = info_dict.get("title") or info_dict.get("description") or "Instagram Post"
+                        if len(title) > 80:
+                            title = title[:80] + "..."
+                        duration = info_dict.get("duration")
+                        extractor = "Instagram"
+                        formats = info_dict.get("formats") or []
+                        is_video = any(f.get("vcodec") != "none" for f in formats) or info_dict.get("ext") in ("mp4", "webm")
+                        thumbs = info_dict.get("thumbnails") or []
+                        thumb = thumbs[-1]["url"] if thumbs else None
+                        
+                        media_info = MediaInfo(
+                            url=url,
+                            title=title,
+                            extractor=extractor,
+                            duration=duration,
+                            filesize_approx=None,
+                            thumbnail_url=thumb,
+                            is_live=False,
+                            formats_available=formats if is_video else None,
+                            description=info_dict.get("description"),
+                            ext="mp4" if is_video else "jpg",
+                            is_photo=not is_video,
+                        )
+                        return True, media_info, None
+                except Exception as ig_err:
+                    logger.debug("Instagram photo extractor probe error: %s", ig_err)
+
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -102,6 +155,8 @@ class DownloaderEngine:
                 thumbnail = info_dict.get("thumbnail")
                 is_live = bool(info_dict.get("is_live", False))
                 ext = info_dict.get("ext") or "mp4"
+                formats = info_dict.get("formats") or []
+                is_photo = ext in ("jpg", "jpeg", "png", "webp") or not formats
 
                 media_info = MediaInfo(
                     url=url,
@@ -111,9 +166,10 @@ class DownloaderEngine:
                     filesize_approx=filesize,
                     thumbnail_url=thumbnail,
                     is_live=is_live,
-                    formats_available=info_dict.get("formats"),
+                    formats_available=formats,
                     description=info_dict.get("description"),
                     ext=ext,
+                    is_photo=is_photo,
                 )
                 return True, media_info, None
 
@@ -308,11 +364,71 @@ class DownloaderEngine:
                     pass
                 return False, None, f"Download timed out after {settings.DOWNLOAD_TIMEOUT_SECONDS}s", temp_dir
 
-            if returncode != 0:
-                err_str = stderr.decode("utf-8", errors="replace").strip()
-                logger.warning("Download subprocess failed with exit code %d: %s", returncode, err_str)
-                user_err = err_str.splitlines()[-1] if err_str else "Download process failed."
-                return False, None, user_err, temp_dir
+            # If it's an Instagram post, download images directly using high-res thumbnails if not video
+            if "instagram.com" in url:
+                try:
+                    def _extract_ig_download():
+                        ydl = yt_dlp.YoutubeDL({
+                            "skip_download": True,
+                            "ignoreerrors": True,
+                            "no_warnings": True,
+                            "quiet": True,
+                        })
+                        ie = PhotoFriendlyInstagramIE(ydl)
+                        return ie._real_extract(url)
+
+                    ig_info = await asyncio.to_thread(_extract_ig_download)
+                    if ig_info:
+                        formats = ig_info.get("formats") or []
+                        is_video = any(f.get("vcodec") != "none" for f in formats) or ig_info.get("ext") in ("mp4", "webm")
+                        if not is_video:
+                            # Download photo(s)
+                            entries = ig_info.get("entries", [])
+                            title = ig_info.get("title") or "Instagram Photo"
+                            img_files = []
+                            async with aiohttp.ClientSession() as session:
+                                if entries:
+                                    for idx, entry in enumerate(entries):
+                                        if not entry:
+                                            continue
+                                        thumbs = entry.get("thumbnails", [])
+                                        if thumbs:
+                                            best_url = thumbs[-1]["url"]
+                                            dest = temp_dir / f"ig_{ig_info.get('id', 'post')}_{idx+1}.jpg"
+                                            async with session.get(best_url) as resp:
+                                                if resp.status == 200:
+                                                    dest.write_bytes(await resp.read())
+                                                    img_files.append(dest)
+                                else:
+                                    thumbs = ig_info.get("thumbnails", [])
+                                    if thumbs:
+                                        best_url = thumbs[-1]["url"]
+                                        dest = temp_dir / f"ig_{ig_info.get('id', 'post')}.jpg"
+                                        async with session.get(best_url) as resp:
+                                            if resp.status == 200:
+                                                dest.write_bytes(await resp.read())
+                                                img_files.append(dest)
+
+                            if img_files:
+                                target_file = img_files[0]
+                                media_type = "photo" if len(img_files) == 1 else "gallery"
+                                total_size = sum(f.stat().st_size for f in img_files)
+                                result = DownloadResult(
+                                    temp_dir=temp_dir,
+                                    file_path=target_file,
+                                    filename=target_file.name,
+                                    file_size_bytes=total_size,
+                                    title=title,
+                                    duration=None,
+                                    thumbnail_path=None,
+                                    media_type=media_type,
+                                    width=None,
+                                    height=None,
+                                    extra_files=img_files[1:],
+                                )
+                                return True, result, None, temp_dir
+                except Exception as ig_err:
+                    logger.warning("Direct Instagram photo download error: %s", ig_err)
 
             # 6. Locate downloaded output file in temp_dir
             downloaded_files = [
