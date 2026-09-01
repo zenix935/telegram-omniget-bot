@@ -172,10 +172,12 @@ class DownloaderEngine:
             logger.info("Executing download command: %s", " ".join(cmd))
 
             # 5. Spawn subprocess with timeout & sanitized exec (NEVER shell=True)
+            # Use 10MB limit for stdout/stderr streams to prevent LimitOverrunError on large progress lines
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=10 * 1024 * 1024,
                 cwd=str(temp_dir),
             )
 
@@ -210,7 +212,11 @@ class DownloaderEngine:
                 async def read_stream():
                     assert process.stdout is not None
                     while True:
-                        line_bytes = await process.stdout.readline()
+                        try:
+                            line_bytes = await process.stdout.readline()
+                        except ValueError:
+                            # Handle rare chunk overrun without newline (e.g. carriage-return progress overwrites)
+                            line_bytes = await process.stdout.read(65536)
                         if not line_bytes:
                             break
                         line = line_bytes.decode("utf-8", errors="replace").strip()
@@ -232,7 +238,10 @@ class DownloaderEngine:
                     assert process.stderr is not None
                     err_lines = []
                     while True:
-                        line_bytes = await process.stderr.readline()
+                        try:
+                            line_bytes = await process.stderr.readline()
+                        except ValueError:
+                            line_bytes = await process.stderr.read(65536)
                         if not line_bytes:
                             break
                         line = line_bytes.decode("utf-8", errors="replace").strip()
@@ -341,6 +350,7 @@ class DownloaderEngine:
         
         cmd = [
             settings.YTDLP_BIN,
+            "--newline",
             "--no-playlist",
             "--no-warnings",
             "--no-check-certificates",

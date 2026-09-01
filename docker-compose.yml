@@ -1,15 +1,40 @@
 services:
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: telegram-bot-api
+    restart: unless-stopped
+    environment:
+      TELEGRAM_API_ID: "35835668"
+      TELEGRAM_API_HASH: "cd13a8be4e56d2872976b7a60bee2473"
+      TELEGRAM_LOCAL: "true"
+    volumes:
+      - telegram-bot-api-data:/var/lib/telegram-bot-api
+      - bot_temp_downloads:/tmp/downloads
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
   telegram-bot:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: telegram-omniget-bot
     restart: unless-stopped
+    depends_on:
+      - telegram-bot-api
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
       - DOWNLOAD_DIR=/tmp/downloads
+      - BOT_API_SERVER=http://telegram-bot-api:8081
     volumes:
       - bot_temp_downloads:/tmp/downloads
     deploy:
@@ -33,4 +58,6 @@ services:
 
 volumes:
   bot_temp_downloads:
+    driver: local
+  telegram-bot-api-data:
     driver: local
