@@ -136,7 +136,16 @@ class Settings(BaseSettings):
             v = v.strip()
             if not v:
                 return []
+            # In case it's a JSON array string e.g. "[123, 456]"
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    return [int(x) for x in json.loads(v)]
+                except Exception:
+                    pass
             return [int(x.strip()) for x in v.split(",") if x.strip()]
+        if isinstance(v, (int, float)):
+            return [int(v)]
         return v or []
 
     @field_validator("DOWNLOAD_DIR", mode="before")

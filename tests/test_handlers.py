@@ -14,7 +14,7 @@ from core.downloader import MediaInfo
 async def test_group_config():
     cfg = get_group_config(-100999)
     assert cfg["auto_download"] is True
-    assert cfg["quality"] == "best"
+    assert cfg["quality"] == "720p"
 
 
 @pytest.mark.asyncio

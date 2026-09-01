@@ -207,15 +207,49 @@ class DownloaderEngine:
 
             # Run stream reader and await process with hard timeout
             try:
-                reader_task = asyncio.create_task(read_stream())
-                
-                async def wait_process():
-                    stdout, stderr = await process.communicate()
-                    return process.returncode, stderr
+                async def read_stream():
+                    assert process.stdout is not None
+                    while True:
+                        line_bytes = await process.stdout.readline()
+                        if not line_bytes:
+                            break
+                        line = line_bytes.decode("utf-8", errors="replace").strip()
+                        if not line:
+                            continue
 
-                _, (returncode, stderr) = await asyncio.gather(
-                    reader_task,
-                    asyncio.wait_for(wait_process(), timeout=float(settings.DOWNLOAD_TIMEOUT_SECONDS)),
+                        # yt-dlp progress line example: [download]  42.5% of ~ 15.20MiB at 3.12MiB/s ETA 00:02
+                        if "[download]" in line and "%" in line:
+                            match = pct_regex.search(line)
+                            if match:
+                                try:
+                                    pct = float(match.group(1))
+                                    if progress_callback:
+                                        await progress_callback(pct, line)
+                                except Exception:
+                                    pass
+
+                async def read_stderr():
+                    assert process.stderr is not None
+                    err_lines = []
+                    while True:
+                        line_bytes = await process.stderr.readline()
+                        if not line_bytes:
+                            break
+                        line = line_bytes.decode("utf-8", errors="replace").strip()
+                        if line:
+                            err_lines.append(line)
+                    return "\n".join(err_lines).encode("utf-8")
+
+                async def wait_process():
+                    reader_task = asyncio.create_task(read_stream())
+                    err_task = asyncio.create_task(read_stderr())
+                    await reader_task
+                    stderr_bytes = await err_task
+                    returncode = await process.wait()
+                    return returncode, stderr_bytes
+
+                returncode, stderr = await asyncio.wait_for(
+                    wait_process(), timeout=float(settings.DOWNLOAD_TIMEOUT_SECONDS)
                 )
 
             except asyncio.TimeoutError:

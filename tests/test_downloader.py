@@ -65,7 +65,9 @@ async def test_download_success(tmp_path: Path):
         proc.returncode = 0
         proc.stdout = AsyncMock()
         proc.stdout.readline.side_effect = [b"[download] 100% of 50.00KiB in 00:01\n", b""]
-        proc.communicate.return_value = (b"done", b"")
+        proc.stderr = AsyncMock()
+        proc.stderr.readline.side_effect = [b""]
+        proc.wait.return_value = 0
         return proc
 
     with patch("core.downloader.validate_url", return_value=(True, None)), \

@@ -36,7 +36,7 @@ def get_group_config(chat_id: int) -> dict:
     if chat_id not in GROUP_CONFIGS:
         GROUP_CONFIGS[chat_id] = {
             "auto_download": True,
-            "quality": "best",  # 'best', '720p', or 'audio'
+            "quality": "720p",  # 'best', '720p', or 'audio'
         }
     return GROUP_CONFIGS[chat_id]
 
@@ -76,7 +76,6 @@ async def handle_group_settings(message: Message, bot: Bot):
     await message.reply(
         text,
         reply_markup=keyboard,
-        message_thread_id=message.message_thread_id,
         parse_mode="Markdown",
     )
 
@@ -140,7 +139,6 @@ async def handle_toggle_download(message: Message, bot: Bot):
     state_str = "🟢 Enabled" if cfg["auto_download"] else "🔴 Disabled"
     await message.reply(
         f"Auto-download is now {state_str} for this group.",
-        message_thread_id=message.message_thread_id,
     )
 
 
@@ -182,12 +180,11 @@ async def handle_group_links(
     url = links[0]
     quality = cfg.get("quality", "best")
 
-    # Step 1: Send clean status reply (preserved in same thread/topic)
+    # Step 1: Send clean status reply
     status_msg = None
     try:
         status_msg = await message.reply(
             "⏳ *Processing media...*",
-            message_thread_id=thread_id,
             parse_mode="Markdown",
         )
     except Exception as e:
@@ -231,7 +228,6 @@ async def handle_group_links(
                     height=result.height,
                     thumbnail=thumb_input,
                     supports_streaming=True,
-                    message_thread_id=thread_id,
                     parse_mode="Markdown",
                 )
             elif result.media_type == "audio":
@@ -241,14 +237,12 @@ async def handle_group_links(
                     title=result.title,
                     duration=result.duration,
                     thumbnail=thumb_input,
-                    message_thread_id=thread_id,
                     parse_mode="Markdown",
                 )
             else:
                 await message.reply_document(
                     document=input_file,
                     caption=caption,
-                    message_thread_id=thread_id,
                     parse_mode="Markdown",
                 )
 
