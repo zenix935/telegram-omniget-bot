@@ -30,11 +30,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/install/bin:/app:${PATH}" \
     PYTHONPATH="/install/lib/python3.12/site-packages:/app"
 
-# Install runtime dependencies: FFmpeg, atomic parsers, curl, ca-certificates
+# Install runtime dependencies: FFmpeg, atomic parsers, curl, ca-certificates, procps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     ca-certificates \
     curl \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy python packages from builder
