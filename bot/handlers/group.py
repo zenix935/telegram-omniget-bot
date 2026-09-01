@@ -21,6 +21,7 @@ from config import settings
 from core.cleaner import cleanup_directory
 from core.downloader import DownloaderEngine
 from core.queue import ConcurrencyManager
+from core.stats import StatsTracker
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,7 @@ async def handle_group_links(
     message: Message,
     downloader: DownloaderEngine,
     concurrency: ConcurrencyManager,
+    stats: StatsTracker,
 ):
     """
     Listens for supported links in groups/supergroups and forum topics.
@@ -252,6 +254,16 @@ async def handle_group_links(
             # Step 4: Zero-clutter auto-cleanup of temporary status message
             if status_msg:
                 await safe_delete_message(message.bot, chat_id, status_msg.message_id)
+
+            # Record downloaded data stats
+            await stats.record_download(
+                user_id=user_id,
+                chat_id=chat_id,
+                is_group=True,
+                file_size_bytes=result.file_size_bytes,
+                media_type=result.media_type,
+                quality=quality,
+            )
 
     except Exception as e:
         logger.error("Error processing group download for %s in chat %d: %s", url, chat_id, e, exc_info=True)

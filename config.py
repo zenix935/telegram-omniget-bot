@@ -29,6 +29,10 @@ class Settings(BaseSettings):
         default=Path("/tmp/downloads"),
         description="Directory for temporary download subdirectories",
     )
+    DATA_DIR: Path = Field(
+        default=Path("/app/data"),
+        description="Directory for persistent application data (stats SQLite database)",
+    )
     MIN_FREE_DISK_GB: float = Field(
         default=3.0,
         description="Minimum free disk space in GB required before starting a download",
@@ -148,9 +152,9 @@ class Settings(BaseSettings):
             return [int(v)]
         return v or []
 
-    @field_validator("DOWNLOAD_DIR", mode="before")
+    @field_validator("DOWNLOAD_DIR", "DATA_DIR", mode="before")
     @classmethod
-    def parse_download_dir(cls, v):
+    def parse_path_fields(cls, v):
         if isinstance(v, str):
             return Path(v)
         return v

@@ -25,6 +25,7 @@ from config import settings
 from core.cleaner import cleanup_directory
 from core.downloader import DownloaderEngine, MediaInfo
 from core.queue import ConcurrencyManager
+from core.stats import StatsTracker
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,7 @@ async def handle_download_callback(
     call: CallbackQuery,
     downloader: DownloaderEngine,
     concurrency: ConcurrencyManager,
+    stats: StatsTracker,
 ):
     """Handle format button clicks: Best, 720p, Audio, or Cancel."""
     parts = call.data.split(":")
@@ -268,6 +270,16 @@ async def handle_download_callback(
             # Cleanup status message
             if call.message:
                 await safe_delete_message(call.bot, status_chat_id, status_msg_id)
+
+            # Record downloaded data stats
+            await stats.record_download(
+                user_id=call.from_user.id,
+                chat_id=status_chat_id,
+                is_group=False,
+                file_size_bytes=result.file_size_bytes,
+                media_type=result.media_type,
+                quality=quality,
+            )
 
     except Exception as e:
         logger.error("Error during download/upload callback execution: %s", e, exc_info=True)

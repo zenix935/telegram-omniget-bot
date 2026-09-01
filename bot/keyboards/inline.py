@@ -58,3 +58,16 @@ def make_group_settings_keyboard(enabled: bool, default_quality: str) -> InlineK
         InlineKeyboardButton(text="Close Settings", callback_data="grp_set:close")
     )
     return builder.as_markup()
+
+
+def make_admin_panel_keyboard() -> InlineKeyboardMarkup:
+    """Build interactive inline keyboard for admin panel control."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔄 Refresh", callback_data="adm_panel:refresh"),
+        InlineKeyboardButton(text="🏆 Top Users", callback_data="adm_panel:top"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="❌ Close", callback_data="adm_panel:close"),
+    )
+    return builder.as_markup()

@@ -11,12 +11,13 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.enums import ParseMode
 
-from bot.handlers import common_router, group_router, private_router
+from bot.handlers import admin_router, common_router, group_router, private_router
 from bot.middlewares import ChatContextMiddleware, RateLimitMiddleware
 from config import settings
 from core.cleaner import purge_old_directories, run_janitor_loop
 from core.downloader import DownloaderEngine
 from core.queue import ConcurrencyManager, TokenBucketLimiter
+from core.stats import StatsTracker
 
 # Configure structured logging
 logging.basicConfig(
@@ -41,6 +42,8 @@ async def main():
     logger.info("Startup cleaner purged %d leftover temporary directories.", stale_cleaned)
 
     # Initialize Core Engines
+    stats_db_path = settings.DATA_DIR / "stats.db"
+    stats_tracker = StatsTracker(db_path=stats_db_path)
     downloader = DownloaderEngine(base_download_dir=settings.DOWNLOAD_DIR)
     concurrency = ConcurrencyManager(
         max_global=settings.MAX_GLOBAL_CONCURRENT,
@@ -76,7 +79,8 @@ async def main():
     dp.message.middleware(ChatContextMiddleware())
     dp.message.middleware(RateLimitMiddleware(user_limiter=user_limiter, group_limiter=group_limiter))
 
-    # Register Routers (order matters: common commands -> group / private)
+    # Register Routers (order matters: admin / common commands -> group / private)
+    dp.include_router(admin_router)
     dp.include_router(common_router)
     dp.include_router(private_router)
     dp.include_router(group_router)
@@ -84,6 +88,7 @@ async def main():
     # Dependency Injection into handlers
     dp["downloader"] = downloader
     dp["concurrency"] = concurrency
+    dp["stats"] = stats_tracker
 
     # Start Background Janitor Task
     janitor_task = asyncio.create_task(

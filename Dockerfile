@@ -46,8 +46,8 @@ RUN groupadd -g 10001 botuser && \
     useradd -u 10001 -g botuser -s /bin/bash -m botuser
 
 # Create downloads temporary storage with correct permissions
-RUN mkdir -p /tmp/downloads && \
-    chown -R botuser:botuser /tmp/downloads /app
+RUN mkdir -p /tmp/downloads /app/data && \
+    chown -R botuser:botuser /tmp/downloads /app/data /app
 
 # Copy application source code
 COPY --chown=botuser:botuser . /app

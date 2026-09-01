@@ -37,6 +37,7 @@ services:
       - BOT_API_SERVER=http://telegram-bot-api:8081
     volumes:
       - bot_temp_downloads:/tmp/downloads
+      - bot_data:/app/data
     deploy:
       resources:
         limits:
@@ -58,6 +59,8 @@ services:
 
 volumes:
   bot_temp_downloads:
+    driver: local
+  bot_data:
     driver: local
   telegram-bot-api-data:
     driver: local
