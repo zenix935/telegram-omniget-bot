@@ -17,7 +17,7 @@ from yt_dlp.extractor.instagram import InstagramIE
 
 from config import settings
 from core.cleaner import check_disk_space, cleanup_directory
-from core.security import validate_url
+from core.security import is_telegram_url, validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,9 @@ class DownloaderEngine:
         valid, reason = validate_url(url)
         if not valid:
             return False, None, reason or "Invalid URL"
+
+        if is_telegram_url(url):
+            return False, None, "Telegram links are not supported for media downloading."
 
         cmd = [
             settings.YTDLP_BIN,
@@ -244,6 +247,9 @@ class DownloaderEngine:
         valid, reason = validate_url(url)
         if not valid:
             return False, None, reason or "Invalid URL", None
+
+        if is_telegram_url(url):
+            return False, None, "Telegram links are not supported for media downloading.", None
 
         # 2. Pre-download disk check
         has_space, free_gb = check_disk_space(self.base_download_dir, min_free_gb=settings.MIN_FREE_DISK_GB)

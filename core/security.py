@@ -113,14 +113,11 @@ def validate_url(url: str, resolve_dns: bool = True) -> Tuple[bool, Optional[str
     return True, None
 
 
-def is_supported_media_domain(url: str) -> bool:
-    """
-    Check if the URL belongs to a known supported domain.
-    yt-dlp and omniget support thousands of sites, but this helper can identify standard platforms.
-    """
+def is_telegram_url(url: str) -> bool:
+    """Check if a URL points to a Telegram domain (t.me, telegram.me, telegram.dog, telegram.org)."""
     try:
         parsed = urlparse(url)
-        host = parsed.hostname or ""
-        return bool(SUPPORTED_DOMAINS_REGEX.match(host))
+        host = (parsed.hostname or "").lower()
+        return host in ("t.me", "telegram.me", "telegram.dog", "telegram.org") or host.endswith(".t.me") or host.endswith(".telegram.me") or host.endswith(".telegram.org")
     except Exception:
         return False

@@ -12,7 +12,7 @@ from aiogram import Bot
 from aiogram.enums import MessageEntityType
 from aiogram.types import FSInputFile, Message
 
-from core.security import is_supported_media_domain, validate_url
+from core.security import is_telegram_url, validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +60,11 @@ def extract_links_from_message(message: Message, max_links: int = 2) -> List[str
             if m not in found_urls:
                 found_urls.append(m.strip())
 
-    # 3. Filter valid & non-SSRF URLs
+    # 3. Filter valid & non-SSRF URLs, excluding Telegram links
     valid_links: List[str] = []
     for link in found_urls:
+        if is_telegram_url(link):
+            continue
         valid, _ = validate_url(link, resolve_dns=False)
         if valid:
             valid_links.append(link)

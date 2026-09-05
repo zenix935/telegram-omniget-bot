@@ -1,5 +1,5 @@
 import pytest
-from core.security import is_ip_private, is_supported_media_domain, validate_url
+from core.security import is_ip_private, is_telegram_url, validate_url
 
 
 def test_ip_private_ranges():
@@ -47,13 +47,9 @@ def test_validate_url_ssrf_and_schemes():
     assert valid is False
 
 
-def test_is_supported_media_domain():
-    assert is_supported_media_domain("https://www.youtube.com/watch?v=123") is True
-    assert is_supported_media_domain("https://youtu.be/123") is True
-    assert is_supported_media_domain("https://www.tiktok.com/@user/video/123") is True
-    assert is_supported_media_domain("https://instagram.com/p/123") is True
-    assert is_supported_media_domain("https://twitter.com/user/status/123") is True
-    assert is_supported_media_domain("https://x.com/user/status/123") is True
-    assert is_supported_media_domain("https://reddit.com/r/videos/comments/123") is True
-    assert is_supported_media_domain("https://udemy.com/course/123") is True
-    assert is_supported_media_domain("https://unknown-domain-xyz.org/file.mp4") is False
+def test_is_telegram_url():
+    assert is_telegram_url("https://t.me/c/2320926013/675394") is True
+    assert is_telegram_url("https://telegram.me/somechannel") is True
+    assert is_telegram_url("https://telegram.org/blog") is True
+    assert is_telegram_url("https://www.youtube.com/watch?v=123") is False
+    assert is_telegram_url("https://instagram.com/p/123") is False
